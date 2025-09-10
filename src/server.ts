@@ -4,8 +4,8 @@ export function info(): InfoResponse {
   console.log("INFO");
   return {
     apiversion: "1",
-    author: "MySnake",
-    color: "#888888",
+    author: "Bubblun",
+    color: "#5AC252",
     head: "default",
     tail: "default",
   };
