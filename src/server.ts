@@ -5,7 +5,7 @@ export function info(): InfoResponse {
   return {
     apiversion: "1",
     author: "Bubblun",
-    color: "#ead00aff",
+    color: "#ead00a",
     head: "smart-caterpillar",
     tail: "coffee",
   };
