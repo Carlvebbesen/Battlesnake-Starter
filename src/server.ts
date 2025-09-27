@@ -1,4 +1,5 @@
 import { Coord, GameState, InfoResponse, MoveResponse } from "./types";
+import { getOpposite, getRelativePosition, manhattenDistance } from "./utils";
 
 export function info(): InfoResponse {
   console.log("INFO");
@@ -20,6 +21,8 @@ export function end(gameState: GameState): void {
 }
 
 export function move(gameState: GameState): MoveResponse {
+  const mode: "food" | "attack" | "defend" = "food";
+
   let isMoveSafe: { [key: string]: boolean } = {
     up: true,
     down: true,
@@ -79,7 +82,7 @@ export function move(gameState: GameState): MoveResponse {
 
   if (safeMoves.length == 0) {
     console.log(`MOVE ${gameState.turn}: No safe moves detected! Moving down`);
-    return { move: "down" };
+    return { move: "down", shout: "Take down Magnus!" };
   }
 
   // Step 4: Move towards the closest food
@@ -97,18 +100,29 @@ export function move(gameState: GameState): MoveResponse {
 
   let nextMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
   const currentHealth = gameState.you.health;
-  const mappedOpponents = gameState.board.snakes.map((sn) => {
-    return {
-      health: sn.health,
-      head: sn.head,
-      id: sn.id,
-      pos: Math.abs(myHead.x - sn.head.x) + Math.abs(myHead.y - sn.head.y),
-    };
-  });
-  const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health);
-  const closest = mappedOpponents.toSorted((a, b) => b.pos - a.pos);
+  const mappedOpponents = gameState.board.snakes
+    .filter((snakes) => snakes.id !== gameState.you.id)
+    .map((sn) => {
+      return {
+        health: sn.health,
+        head: sn.head,
+        id: sn.id,
+        relativeToMe: getRelativePosition(gameState.you.head, sn),
+        distance: manhattenDistance(myHead, sn.head),
+      };
+    });
+  const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health)[0];
+  const closest = mappedOpponents.toSorted(
+    (a, b) => b.distance - a.distance
+  )[0];
+  if (closest.distance < 2) {
+    const defend = getOpposite(closest.relativeToMe);
+    if (defend && safeMoves.includes(defend)) {
+      return { move: defend, shout: "DEFEND" };
+    }
+  }
 
-  if (closestFood !== undefined && currentHealth > 50) {
+  if (closestFood !== undefined && currentHealth < 50) {
     const preferredMoves: string[] = [];
     if (myHead.x < closestFood.x) {
       preferredMoves.push("right");
@@ -134,5 +148,5 @@ export function move(gameState: GameState): MoveResponse {
   }
 
   console.log(`MOVE ${gameState.turn}: ${nextMove}`);
-  return { move: nextMove };
+  return { move: nextMove, shout: "Take down Magnus!" };
 }
