@@ -96,8 +96,19 @@ export function move(gameState: GameState): MoveResponse {
   });
 
   let nextMove = safeMoves[Math.floor(Math.random() * safeMoves.length)];
+  const currentHealth = gameState.you.health;
+  const mappedOpponents = gameState.board.snakes.map((sn) => {
+    return {
+      health: sn.health,
+      head: sn.head,
+      id: sn.id,
+      pos: Math.abs(myHead.x - sn.head.x) + Math.abs(myHead.y - sn.head.y),
+    };
+  });
+  const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health);
+  const closest = mappedOpponents.toSorted((a, b) => b.pos - a.pos);
 
-  if (closestFood !== undefined) {
+  if (closestFood !== undefined && currentHealth > 50) {
     const preferredMoves: string[] = [];
     if (myHead.x < closestFood.x) {
       preferredMoves.push("right");
