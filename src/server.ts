@@ -111,18 +111,18 @@ export function move(gameState: GameState): MoveResponse {
         distance: manhattenDistance(myHead, sn.head),
       };
     });
-  const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health)[0];
-  const closest = mappedOpponents.toSorted(
-    (a, b) => b.distance - a.distance
-  )[0];
-  if (closest.distance < 2) {
-    const defend = getOpposite(closest.relativeToMe);
-    if (defend && safeMoves.includes(defend)) {
-      return { move: defend, shout: "DEFEND" };
-    }
-  }
+  // const mostLives = mappedOpponents.toSorted((a, b) => b.health - a.health)[0];
+  // const closest = mappedOpponents.toSorted(
+  //   (a, b) => b.distance - a.distance
+  // )[0];
+  // if (closest.distance < 2) {
+  //   const defend = getOpposite(closest.relativeToMe);
+  //   if (defend && safeMoves.includes(defend)) {
+  //     return { move: defend, shout: "DEFEND" };
+  //   }
+  // }
 
-  if (closestFood !== undefined && currentHealth < 50) {
+  if (closestFood !== undefined) {
     const preferredMoves: string[] = [];
     if (myHead.x < closestFood.x) {
       preferredMoves.push("right");
