@@ -5,9 +5,9 @@ export function info(): InfoResponse {
   return {
     apiversion: "1",
     author: "Bubblun",
-    color: "#5AC252",
-    head: "default",
-    tail: "default",
+    color: "#ead00aff",
+    head: "smart-caterpillar",
+    tail: "coffee",
   };
 }
 
@@ -75,11 +75,6 @@ export function move(gameState: GameState): MoveResponse {
     }
   });
 
-  // TODO: Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
-  // This would be a great next step! You can loop over `gameState.board.snakes`
-  // and apply the same logic as Step 2 for each opponent snake's body.
-
-  // Get all safe moves
   const safeMoves = Object.keys(isMoveSafe).filter((key) => isMoveSafe[key]);
 
   if (safeMoves.length == 0) {
