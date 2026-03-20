@@ -117,6 +117,23 @@ export function buildDangerSet(gameState: GameState, blocked: Set<string>): Set<
   return danger;
 }
 
+// Returns cells opponents could move into next turn (used to penalize A* paths)
+export function buildOpponentZone(gameState: GameState, blocked: Set<string>): Set<string> {
+  const zone = new Set<string>();
+  const { board } = gameState;
+
+  for (const snake of board.snakes) {
+    if (snake.id === gameState.you.id) continue;
+    for (const neighbor of getNeighbors(snake.head, board.width, board.height)) {
+      if (!blocked.has(coordKey(neighbor))) {
+        zone.add(coordKey(neighbor));
+      }
+    }
+  }
+
+  return zone;
+}
+
 export function floodFill(
   start: Coord,
   blocked: Set<string>,
@@ -171,6 +188,25 @@ export function findNearestFood(
   return null;
 }
 
+// Returns 0.0 (corner/edge) to 1.0 (center). Used to nudge SURVIVE mode toward center.
+export function centerScore(c: Coord, width: number, height: number): number {
+  const cx = (width - 1) / 2;
+  const cy = (height - 1) / 2;
+  const maxDist = cx + cy;
+  const dist = Math.abs(c.x - cx) + Math.abs(c.y - cy);
+  return (maxDist - dist) / maxDist;
+}
+
+// True if the cell is on the edge of the board
+export function isEdgeCell(c: Coord, width: number, height: number): boolean {
+  return c.x === 0 || c.x === width - 1 || c.y === 0 || c.y === height - 1;
+}
+
+// True if the cell is in a corner of the board
+export function isCornerCell(c: Coord, width: number, height: number): boolean {
+  return (c.x === 0 || c.x === width - 1) && (c.y === 0 || c.y === height - 1);
+}
+
 interface AStarNode {
   coord: Coord;
   g: number;
@@ -178,12 +214,15 @@ interface AStarNode {
   firstDir: string;
 }
 
+// costMap: optional per-cell traversal cost override (default 1). Used to penalize
+// wall cells and opponent zones without fully blocking them.
 export function aStarFirstMove(
   start: Coord,
   goal: Coord,
   blocked: Set<string>,
   width: number,
-  height: number
+  height: number,
+  costMap?: Map<string, number>
 ): string | null {
   const dirs = ["up", "down", "left", "right"];
   const open: AStarNode[] = [];
@@ -196,7 +235,7 @@ export function aStarFirstMove(
     const next = applyMove(start, dir);
     if (next.x < 0 || next.x >= width || next.y < 0 || next.y >= height) continue;
     if (blocked.has(coordKey(next))) continue;
-    const g = 1;
+    const g = costMap?.get(coordKey(next)) ?? 1;
     const f = g + manhattenDistance(next, goal);
     open.push({ coord: next, g, f, firstDir: dir });
     gScore.set(coordKey(next), g);
@@ -217,7 +256,8 @@ export function aStarFirstMove(
     for (const neighbor of getNeighbors(current.coord, width, height)) {
       const key = coordKey(neighbor);
       if (blocked.has(key)) continue;
-      const tentativeG = current.g + 1;
+      const stepCost = costMap?.get(key) ?? 1;
+      const tentativeG = current.g + stepCost;
       if (tentativeG < (gScore.get(key) ?? Infinity)) {
         gScore.set(key, tentativeG);
         open.push({
