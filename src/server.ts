@@ -5,7 +5,6 @@ import {
   buildBlockedSet,
   buildDangerSet,
   coordKey,
-  findNearestFood,
   floodFill,
   manhattenDistance,
 } from "./utils";
@@ -62,8 +61,24 @@ export function move(gameState: GameState): MoveResponse {
     });
   }
 
+  // === STATE SNAPSHOT ===
+  const opponentSummary = opponents.map((o) => ({
+    name: o.name,
+    length: o.length,
+    health: o.health,
+    head: o.head,
+    distToMe: manhattenDistance(myHead, o.head),
+  }));
+  console.log(
+    `[T${gameState.turn}] HEAD=(${myHead.x},${myHead.y}) len=${myLength} hp=${myHealth} ` +
+    `opponents=${opponents.length} food=${board.food.length} hazards=${board.hazards.length}`
+  );
+  if (opponentSummary.length > 0) {
+    console.log(`[T${gameState.turn}] OPPONENTS: ${JSON.stringify(opponentSummary)}`);
+  }
+
   if (candidates.length === 0) {
-    console.log(`MOVE ${gameState.turn}: No safe moves — CORNERED`);
+    console.log(`[T${gameState.turn}] CORNERED — no safe moves`);
     return { move: "up", shout: "CORNERED" };
   }
 
@@ -73,39 +88,63 @@ export function move(gameState: GameState): MoveResponse {
     fillScores[dir] = floodFill(applyMove(myHead, dir), blocked, width, height);
   }
 
-  // Mode selection
-  const minOpponentLength = opponents.length > 0
-    ? Math.min(...opponents.map((o) => o.length))
-    : Infinity;
-
-  const nearbyWeakOpponent = opponents
-    .filter((o) => o.length < myLength && manhattenDistance(myHead, o.head) <= 4)
-    .sort((a, b) => manhattenDistance(myHead, a.head) - manhattenDistance(myHead, b.head))[0];
-
-  const wantsFood = myHealth < 40 || myLength <= minOpponentLength;
-  const wantsKill = !wantsFood && nearbyWeakOpponent !== undefined;
-
-  // FOOD mode
-  if (wantsFood) {
-    const target = findNearestFood(myHead, board.food, blocked, width, height);
-    if (target) {
-      const m = aStarFirstMove(myHead, target, blocked, width, height);
-      if (m && candidates.includes(m)) {
-        console.log(`MOVE ${gameState.turn}: ${m} [HUNGRY]`);
-        return { move: m, shout: "HUNGRY" };
-      }
-    }
-    // Fall through to SURVIVE
+  // === CANDIDATE SCORES ===
+  {
+    const hazardSetDebug = new Set(board.hazards.map(coordKey));
+    const candidateLog = candidates.map((dir) => {
+      const next = applyMove(myHead, dir);
+      const key = coordKey(next);
+      const isDanger = danger.has(key);
+      const isHazard = hazardSetDebug.has(key);
+      return `${dir}(fill=${fillScores[dir]}${isDanger ? ",DANGER" : ""}${isHazard ? ",HAZARD" : ""})`;
+    });
+    console.log(`[T${gameState.turn}] CANDIDATES: ${candidateLog.join(" | ")}`);
   }
 
-  // KILL mode
-  if (wantsKill && nearbyWeakOpponent) {
-    const m = aStarFirstMove(myHead, nearbyWeakOpponent.head, blocked, width, height);
-    if (m && candidates.includes(m) && fillScores[m] > myLength / 2) {
-      console.log(`MOVE ${gameState.turn}: ${m} [KILL]`);
-      return { move: m, shout: "KILL" };
+  // Rank food: uncontested (we arrive first) sorted before contested
+  const rankedFood = board.food
+    .map((f) => {
+      const myDist = manhattenDistance(myHead, f);
+      const minOppDist = opponents.length > 0
+        ? Math.min(...opponents.map((o) => manhattenDistance(o.head, f)))
+        : Infinity;
+      return { food: f, myDist, contested: myDist >= minOppDist };
+    })
+    .sort((a, b) => {
+      if (a.contested !== b.contested) return a.contested ? 1 : -1;
+      return a.myDist - b.myDist;
+    });
+
+  // === FOOD RANKING ===
+  if (rankedFood.length > 0) {
+    const foodLog = rankedFood.map(({ food, myDist, contested }) =>
+      `(${food.x},${food.y}) myDist=${myDist} ${contested ? "CONTESTED" : "free"}`
+    );
+    console.log(`[T${gameState.turn}] FOOD RANKED: ${foodLog.join(" | ")}`);
+  }
+
+  // FOOD mode: always try to eat to grow (stay longest), but not into a trap
+  for (const { food, myDist, contested } of rankedFood) {
+    const m = aStarFirstMove(myHead, food, blocked, width, height);
+    const fillOk = m ? fillScores[m] > myLength / 2 : false;
+    const emergency = myHealth < 30;
+    console.log(
+      `[T${gameState.turn}] FOOD (${food.x},${food.y}) myDist=${myDist} contested=${contested} ` +
+      `astar=${m ?? "none"} fill=${m ? fillScores[m] : "n/a"} fillOk=${fillOk} emergency=${emergency}`
+    );
+    if (m && candidates.includes(m)) {
+      if (fillOk || emergency) {
+        const shout = contested ? "HUNGRY (contested)" : "HUNGRY";
+        console.log(`[T${gameState.turn}] DECISION: ${m} [${shout}] → food at (${food.x},${food.y})`);
+        return { move: m, shout };
+      } else {
+        console.log(`[T${gameState.turn}] FOOD SKIPPED: fill=${fillScores[m]} ≤ myLength/2=${myLength / 2} (trap risk)`);
+      }
+    } else if (m && !candidates.includes(m)) {
+      console.log(`[T${gameState.turn}] FOOD SKIPPED: astar move "${m}" not in candidates`);
+    } else {
+      console.log(`[T${gameState.turn}] FOOD SKIPPED: no path found`);
     }
-    // Fall through to SURVIVE
   }
 
   // SURVIVE: score each candidate by flood fill, penalize danger and hazard
@@ -117,9 +156,17 @@ export function move(gameState: GameState): MoveResponse {
     const next = applyMove(myHead, dir);
     const key = coordKey(next);
     let score = fillScores[dir];
+    const rawScore = score;
+    const isDanger = danger.has(key);
+    const isHazard = hazardSet.has(key);
 
-    if (danger.has(key)) score = 0;
-    if (hazardSet.has(key)) score *= 0.5;
+    if (isDanger) score *= 0.1;
+    if (isHazard) score *= 0.5;
+
+    console.log(
+      `[T${gameState.turn}] SURVIVE score: ${dir} raw=${rawScore}` +
+      `${isDanger ? " ×0.1(danger)" : ""}${isHazard ? " ×0.5(hazard)" : ""} final=${score.toFixed(2)}`
+    );
 
     if (score > bestScore) {
       bestScore = score;
@@ -127,6 +174,6 @@ export function move(gameState: GameState): MoveResponse {
     }
   }
 
-  console.log(`MOVE ${gameState.turn}: ${bestMove} [SURVIVE]`);
+  console.log(`[T${gameState.turn}] DECISION: ${bestMove} [SURVIVE] score=${bestScore.toFixed(2)}`);
   return { move: bestMove, shout: "SURVIVE" };
 }
