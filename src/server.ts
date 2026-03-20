@@ -18,7 +18,7 @@ export function info(): InfoResponse {
   return {
     apiversion: "1",
     author: "Bubblun",
-    color: "#ead00a",
+    color: "#00008B",
     head: "smart-caterpillar",
     tail: "coffee",
   };
@@ -117,7 +117,12 @@ export function move(gameState: GameState): MoveResponse {
     let bestKillFill = -1;
     for (const dir of candidates) {
       const next = applyMove(myHead, dir);
-      if (manhattenDistance(next, opp.head) === 1 && fillScores[dir] >= myLength) {
+      if (
+        manhattenDistance(next, opp.head) === 1 &&
+        fillScores[dir] >= myLength * 2 &&
+        !isCornerCell(next, width, height) &&
+        !isEdgeCell(next, width, height)
+      ) {
         if (fillScores[dir] > bestKillFill) {
           bestKillFill = fillScores[dir];
           bestKillMove = dir;
@@ -273,6 +278,7 @@ export function move(gameState: GameState): MoveResponse {
 
   // === SURVIVE: flood fill + danger/hazard penalty + center preference ===
   const hazardSet = new Set(board.hazards.map(coordKey));
+  const foodSet = new Set(board.food.map(coordKey));
   const CENTER_WEIGHT = 5;
   let bestMove = candidates[0];
   let bestScore = -Infinity;
@@ -284,9 +290,19 @@ export function move(gameState: GameState): MoveResponse {
     const rawScore = score;
     const isDanger = danger.has(key);
     const isHazard = hazardSet.has(key);
+    const isFood = foodSet.has(key);
 
     if (isDanger) score *= 0.1;
     if (isHazard) score *= 0.5;
+
+    // Penalize food cells that are dangerous for long snakes (mirrors food-mode skips)
+    if (isFood && !emergency) {
+      if (myLength > 10 && isCornerCell(next, width, height)) {
+        score = -Infinity; // never accidentally eat corner food when long
+      } else if (myLength > 12 && myHealth > 40 && isEdgeCell(next, width, height)) {
+        score *= 0.05; // heavily penalize edge food
+      }
+    }
 
     // Add center bonus to prefer open board positions over walls/corners
     const cScore = centerScore(next, width, height) * CENTER_WEIGHT;
@@ -295,7 +311,8 @@ export function move(gameState: GameState): MoveResponse {
     console.log(
       `[T${gameState.turn}] SURVIVE score: ${dir} raw=${rawScore}` +
       `${isDanger ? " ×0.1(danger)" : ""}${isHazard ? " ×0.5(hazard)" : ""}` +
-      ` +center=${cScore.toFixed(2)} final=${score.toFixed(2)}`
+      `${isFood ? " FOOD" : ""}` +
+      ` +center=${cScore.toFixed(2)} final=${score === -Infinity ? "-Inf" : score.toFixed(2)}`
     );
 
     if (score > bestScore) {
